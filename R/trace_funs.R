@@ -44,14 +44,16 @@ trace_funs <- function(
   })
 
   for(pkg in pkgs) {
-    all_funs <- getNamespaceExports("ggplot2")
+    all_funs <- getNamespaceExports(pkg)
     traced_funs <- all_funs[Reduce(`|`, lapply(prefixes, startsWith, x = all_funs))]
     # don't consider some prefixed functions
     traced_funs <- setdiff(traced_funs, exceptions)
     for (fun in traced_funs) {
       #browser()
-      suppressMessages(eval(bquote(
-        trace(.(str2lang(paste0(pkg, "::", fun))), tracer = tracer, print = FALSE))))
+      suppressMessages(
+        trace(fun, tracer = tracer, print = FALSE, where = asNamespace(pkg)))
+      # suppressMessages(eval(bquote(
+      #   trace(.(str2lang(paste0(pkg, "::", fun))), tracer = tracer, print = FALSE))))
       # suppressMessages(eval(bquote(
       #   trace(`::`(.(as.name(pkg)),.(as.name(fun))), tracer = tracer, print = FALSE))))
     }
@@ -68,14 +70,13 @@ untrace_funs <- function(
   exceptions = c("scale_type", "theme_get", "coord_munch")) {
 
   for(pkg in pkgs) {
-    all_funs <- getNamespaceExports("ggplot2")
+    all_funs <- getNamespaceExports(pkg)
     traced_funs <- all_funs[Reduce(`|`, lapply(prefixes, startsWith, x = all_funs))]
     # don't consider some prefixed functions
     traced_funs <- setdiff(traced_funs, exceptions)
     for (fun in traced_funs) {
       #browser()
-      suppressMessages(eval(bquote(
-        untrace(.(str2lang(paste0(pkg, "::", fun)))))))
+      suppressMessages(untrace(fun, where = asNamespace(pkg)))
     }
   }
   invisible(NULL)

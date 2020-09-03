@@ -15,31 +15,49 @@ trace_funs <- function(
 
       scs <- sys.calls()
       n <- length(scs) - 4 # -4 to account for the trace overhead
-      #print(scs[[n]])
-      #browser()
-      # we allow calls to "+" and calls to print, list, `%+%` and `c`
-      # calls to `+` are detected differently
-      plus_call_lgl <- is.call(scs[[n]]) &&
-        identical(quote(`+`), str2lang(paste(capture.output(print(scs[[n]])), collapse = " "))[[1]])
-      other_allowed_call_lgl <-
-        n >= 2 &&
-        is.call(call <- scs[[n - 1]]) && (
-          # kept to be able to view objects without triggering an error:
-          identical(call[[1]], quote(print)) ||
-            # used internally by ggplot on prefixed functions :
-            identical(call[[1]], quote(structure)) ||
-            identical(call[[1]], quote(find_scale)) ||
-            # functions allowed to be used on prefixed functions:
-            identical(call[[1]], quote(list)) ||
-            identical(call[[1]], quote(`%+%`)) ||
-            identical(call[[1]], quote(c))
-        )
-      if(n != 1 && !plus_call_lgl && !other_allowed_call_lgl) {
+
+      # Detect calls to `+` by the presence of a srcref
+      call <- paste(as.character(getSrcref(scs[[n]]), useSource = TRUE), collapse = "")
+
+      plus_call_lgl <- ifelse(nzchar(call),
+                              identical(quote(`+`), str2lang(call)[[1]]),
+                              FALSE)
+
+      # check if the current comes from the pkg namespace by recursing through
+      # the frame stack
+      is_called_internally_lgl <- FALSE
+      pkg_env <- asNamespace(pkg)
+      while (n > 2 && !is_called_internally_lgl) {
+        env <- sys.frames()[[n-1]]
+        while(TRUE) {
+          if (identical(env, emptyenv())) {
+            n <- n - 1
+            break
+          }
+          parent = parent.env(env)
+
+          # avoid infinite loops
+          if (identical(parent, env)) {
+            n <- n - 1
+            break
+          }
+
+          if (identical(parent, pkg_env)) {
+            is_called_internally_lgl <- TRUE
+            break
+          }
+
+          env <- parent
+        }
+      }
+
+      if(n != 1 && !plus_call_lgl && !is_called_internally_lgl) {
         stop("Did you forget a `+` in a ggplot call ?\n",
-             "Use `print(", deparse(scs[[n]], width.cutoff = 500), ")` to view the ",
+             "Use \n`print(", paste(deparse(scs[[n]], width.cutoff = 500),
+                                    collapse = "\n"),
+             ")`\n to view the ",
              "object, or set `options(ggfail = FALSE)` to disable this error.",
-             call. = FALSE
-        )
+             call. = FALSE)
       }
     }
   })
@@ -50,6 +68,11 @@ trace_funs <- function(
     # don't consider some prefixed functions
     traced_funs <- setdiff(traced_funs, exceptions)
     traced_funs <- lapply(traced_funs, as.name)
+    # embed pkg name into tracer
+    tracer <- as.call(list(tracer[[1]],
+                           eval(substitute(quote(pkg <- x), list(x = pkg))),
+                           tracer[[2]]))
+
     suppressMessages(trace(what = do.call(expression, traced_funs),
                            tracer = tracer, print = FALSE, where = asNamespace(pkg)))
   }
@@ -69,6 +92,12 @@ untrace_funs <- function(
     traced_funs <- all_funs[Reduce(`|`, lapply(prefixes, startsWith, x = all_funs))]
     # don't consider some prefixed functions
     traced_funs <- setdiff(traced_funs, exceptions)
+    # don't consider functions which aren't currently traced.
+    # necessary to prevent methods:::.TraceWithMethods from erroring
+    traced_funs <- traced_funs[
+      sapply(traced_funs,
+             function(x) is(getFunction(x, where = asNamespace(pkg)), "traceable"))
+    ]
     traced_funs <- lapply(traced_funs, as.name)
     suppressMessages(
       untrace(do.call(expression, traced_funs), where = asNamespace(pkg)))

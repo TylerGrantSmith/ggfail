@@ -49,15 +49,9 @@ trace_funs <- function(
     traced_funs <- all_funs[Reduce(`|`, lapply(prefixes, startsWith, x = all_funs))]
     # don't consider some prefixed functions
     traced_funs <- setdiff(traced_funs, exceptions)
-    for (fun in traced_funs) {
-      #browser()
-      suppressMessages(
-        trace(fun, tracer = tracer, print = FALSE, where = asNamespace(pkg)))
-      # suppressMessages(eval(bquote(
-      #   trace(.(str2lang(paste0(pkg, "::", fun))), tracer = tracer, print = FALSE))))
-      # suppressMessages(eval(bquote(
-      #   trace(`::`(.(as.name(pkg)),.(as.name(fun))), tracer = tracer, print = FALSE))))
-    }
+    traced_funs <- lapply(traced_funs, as.name)
+    suppressMessages(trace(what = do.call(expression, traced_funs),
+                           tracer = tracer, print = FALSE, where = asNamespace(pkg)))
   }
   invisible(NULL)
 }
@@ -75,10 +69,9 @@ untrace_funs <- function(
     traced_funs <- all_funs[Reduce(`|`, lapply(prefixes, startsWith, x = all_funs))]
     # don't consider some prefixed functions
     traced_funs <- setdiff(traced_funs, exceptions)
-    for (fun in traced_funs) {
-      #browser()
-      suppressMessages(untrace(fun, where = asNamespace(pkg)))
-    }
+    traced_funs <- lapply(traced_funs, as.name)
+    suppressMessages(
+      untrace(do.call(expression, traced_funs), where = asNamespace(pkg)))
   }
   invisible(NULL)
 }

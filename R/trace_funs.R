@@ -17,11 +17,14 @@ trace_funs <- function(
       n <- length(scs) - 4 # -4 to account for the trace overhead
 
       # Detect calls to `+` by the presence of a srcref
-      call <- paste(as.character(getSrcref(scs[[n]]), useSource = TRUE), collapse = "")
+      if (!is.null(src <- getSrcref(scs[[n]]))) {
+        call <- paste(as.character(src), collapse = "")
+      } else {
+        return()
+      }
 
-      plus_call_lgl <- ifelse(nzchar(call),
-                              identical(quote(`+`), str2lang(call)[[1]]),
-                              FALSE)
+      plus_call_lgl <-
+        !is.null(call) && nzchar(call) && identical(quote(`+`), str2lang(call)[[1]])
 
       # check if the current comes from the pkg namespace by recursing through
       # the frame stack
@@ -29,7 +32,7 @@ trace_funs <- function(
       pkg_env <- asNamespace(pkg)
       while (n > 2 && !is_called_internally_lgl) {
         env <- sys.frames()[[n-1]]
-        while(TRUE) {
+        repeat {
           if (identical(env, emptyenv())) {
             n <- n - 1
             break
@@ -73,8 +76,15 @@ trace_funs <- function(
                            eval(substitute(quote(pkg <- x), list(x = pkg))),
                            tracer[[2]]))
 
+    pkg_env_name <- paste0("package:", pkg)
+    if (pkg_env_name %in% search()) {
+      pkg_env <- as.environment(pkg_env_name)
+    } else {
+      pkg_env <- asNamespace(pkg)
+    }
     suppressMessages(trace(what = do.call(expression, traced_funs),
-                           tracer = tracer, print = FALSE, where = asNamespace(pkg)))
+                           tracer = tracer, print = FALSE,
+                           where = pkg_env))
   }
   invisible(NULL)
 }
@@ -98,10 +108,10 @@ untrace_funs <- function(
       sapply(traced_funs,
              function(x) is(getFunction(x, where = asNamespace(pkg)), "traceable"))
     ]
+
     traced_funs <- lapply(traced_funs, as.name)
     suppressMessages(
       untrace(do.call(expression, traced_funs), where = asNamespace(pkg)))
   }
   invisible(NULL)
 }
-
